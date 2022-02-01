@@ -1,6 +1,6 @@
  # Virtual Keypad for the Honeywell Vista alarm systems using an ESP32
  
- This sketch provides a virtual keypad web interface using the esp32 as a standalone web server using AES encrypted web socket communications. All keypad functionality provided as well as zone display.  
+ This sketch provides a virtual keypad web interface using the esp32 as a standalone web server using AES encrypted web socket communications as well as push notifications and control via the Telegram app. All keypad functionality is provided as well as zone display.  Using this firmware on an ESP32 will give you basically full control of your alarm system using a virtual keypad from your phone or computer.  You do not need any other home control software.  You can set it up to send push notifications on any event (such as alarms or faults)  to your phone or computer (via Telegram).  You can also arm/disarm /etc your system via your own bot on Telegram.
  
  This sketch uses portions of the code from the VirtualKeypad-Web example for DSC alarm systems found in the taligent/dscKeybusInterface respository at:  https://github.com/taligentx/dscKeybusInterface/blob/master/examples/esp32/VirtualKeypad-Web/VirtualKeypad-Web.ino.
  
