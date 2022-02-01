@@ -4,7 +4,11 @@
  
  This sketch uses portions of the code from the VirtualKeypad-Web example for DSC alarm systems found in the taligent/dscKeybusInterface respository at:  https://github.com/taligentx/dscKeybusInterface/blob/master/examples/esp32/VirtualKeypad-Web/VirtualKeypad-Web.ino.
  
- It was adapted to use the Vista alarm system library at: https://github.com/Dilbert66/esphome-vistaECP/tree/master/src/vistaEcpInterface, with the addition of two way AES encryption for the web socket and push notification capability for various applications. This version mainly focuses on the Telegram (https://telegram.org) messaging application due to it's ability to also provide the ability to control your system remotely using bots in addition to having push capability.  All this at no cost!
+ It was adapted to use the Vista alarm system library at: 
+ 
+ https://github.com/Dilbert66/esphome-vistaECP/tree/master/src/vistaEcpInterface 
+ 
+ with the addition of two way AES encryption for the web socket and push notification capability for various applications. This version mainly focuses on the Telegram (https://telegram.org) messaging application due to it's ability to also provide the ability to control your system remotely using bots in addition to having push capability.  All this at no cost!
     
 AES encryption was used instead of https  for web server because of the fact that I could not find a decent https server library available for the ESP32.  The few that are out there are very slow and buggy, in addition to the fact that https requires the use of SSL certificates which are a pain to use and setup especially if you use self signed versions.
     
