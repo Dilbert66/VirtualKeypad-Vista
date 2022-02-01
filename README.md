@@ -1,4 +1,4 @@
- # Virtual Keypad for the Honeywell Vista alarm systems (esp32)
+ # Virtual Keypad for the Honeywell Vista alarm systems using an ESP32
  
  This sketch provides a virtual keypad web interface using the esp32 as a standalone web server using AES encrypted web socket communications. All keypad functionality provided as well as zone display.  
  
