@@ -1,6 +1,6 @@
- # Virtual Keypad for the Honeywell Vista alarm systems (esp8266/esp32)
+ # Virtual Keypad for the Honeywell Vista alarm systems (esp32)
  
- This sketch provides a virtual keypad web interface using the esp32/esp8266 as a standalone web server using AES encrypted web socket communications. All keypad functionality provided as well as zone display.  
+ This sketch provides a virtual keypad web interface using the esp32 as a standalone web server using AES encrypted web socket communications. All keypad functionality provided as well as zone display.  
  
  This sketch uses portions of the code from the VirtualKeypad-Web example for DSC alarm systems found in the taligent/dscKeybusInterface respository at:  https://github.com/taligentx/dscKeybusInterface/blob/master/examples/esp32/VirtualKeypad-Web/VirtualKeypad-Web.ino.
  
