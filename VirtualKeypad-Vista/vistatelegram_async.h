@@ -27,12 +27,6 @@ struct rx_message_t {
   String date;
 };
 
-struct tx_message_t {
-  String text; // message text 
-  String chat_id; //destination chat id group/user
-  String options; //optional additional serialized json options such as reply_markup, etc
-};
-
 //url encoded default option string.  This sets a button to send the /getstatus  cmd
 //#define DEFAULT_PUSH_OPTIONS "{'reply_markup':{'inline_keyboard':[[{'text':'View System State','callback_data':'/getstatus'}]]}}" 
 
@@ -45,8 +39,7 @@ PushLib(const char * token, const char * userID, const char * prefix);
 void loop();
 void begin();
 void stop();
-bool sendMessage(tx_message_t msg);
-bool sendMessage(String msg);
+bool sendMessageJson(String msg);
 bool isSending();
 void addCmdHandler(std:: function < void(rx_message_t * msg) > callback);
 

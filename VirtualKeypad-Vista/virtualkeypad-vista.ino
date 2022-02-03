@@ -55,6 +55,7 @@
 */
 
 
+
 #include "vistatelegram_async.h" //telegram notify full async plugin with inbound bot cmd capability
 
 #define useOTA //comment this to disable OTA updates. 
@@ -306,13 +307,14 @@ lrrType lrr, previousLrr, emptyLrr;
 unsigned long asteriskTime, sendWaitTime;
 bool forceZoneUpdate;
 
-void pushNotification(String text, String options = "") {
-
+void pushNotification(String text,String receiverid="") {
   if (pauseNotifications) return;
-  tx_message_t msg;
-  msg.text = text;
-  msg.options = options;
-  pushlib.sendMessage(msg);
+  String outmsg;
+  StaticJsonDocument < 300 > doc;
+  doc["chat_id"] = receiverid!=""?receiverid:(String) telegramUserID;
+  doc["text"] =text;
+  serializeJson(doc, outmsg);
+  pushlib.sendMessageJson(outmsg);
 
 }
 
@@ -2132,28 +2134,28 @@ void cmdHandler(rx_message_t * msg) {
   if (msg -> text == "/armstay") {
     doc["text"] = "sending armed stay";
     serializeJson(doc, outmsg);
-    pushlib.sendMessage(outmsg);
+    pushlib.sendMessageJson(outmsg);
     vista.write(accessCode);
     vista.write("3");
 
   } else if (msg -> text == "/armaway") {
     doc["text"] = "sending armed away";
     serializeJson(doc, outmsg);
-    pushlib.sendMessage(outmsg);
+    pushlib.sendMessageJson(outmsg);
     vista.write(accessCode);
     vista.write("2");
 
   } else if (msg -> text == "/bypass") {
     doc["text"] = "Sending bypass...";
     serializeJson(doc, outmsg);
-    pushlib.sendMessage(outmsg);
+    pushlib.sendMessageJson(outmsg);
     vista.write(accessCode);
     vista.write("6#");
 
   } else if (msg -> text == "/reboot") {
     doc["text"] = "Rebooting...";
     serializeJson(doc, outmsg);
-    pushlib.sendMessage(outmsg);
+    pushlib.sendMessageJson(outmsg);
     delay(10000);
     ESP.restart();
   } else if (msg -> text == "/getstatus") {
@@ -2170,7 +2172,7 @@ void cmdHandler(rx_message_t * msg) {
     doc["text"] = s;
     doc.remove("reply_markup"); //msg too long for markup        
     serializeJson(doc, outmsg);
-    pushlib.sendMessage(outmsg);
+    pushlib.sendMessageJson(outmsg);
 
   } else if (sub == "/!") {
     String cmd = msg -> text.substring(2, msg -> text.length());
@@ -2181,26 +2183,26 @@ void cmdHandler(rx_message_t * msg) {
     vista.stop();
     doc["text"] = "vista bus stopped...";
     serializeJson(doc, outmsg);
-    pushlib.sendMessage(outmsg);
+    pushlib.sendMessageJson(outmsg);
 
   } else if (msg -> text == "/startbus") {
     vista.stop();
     vista.begin(RX_PIN, TX_PIN, KP_ADDR, MONITOR_PIN);
     doc["text"] = "Vista bus started..";
     serializeJson(doc, outmsg);
-    pushlib.sendMessage(outmsg);
+    pushlib.sendMessageJson(outmsg);
 
   } else if (msg -> text == "/stopnotify") {
     pauseNotifications = true;
     doc["text"] = "Notifications paused..";
     serializeJson(doc, outmsg);
-    pushlib.sendMessage(outmsg);
+    pushlib.sendMessageJson(outmsg);
 
   } else if (msg -> text == "/startnotify") {
     pauseNotifications = false;
     doc["text"] = "Notifications un-paused..";
     serializeJson(doc, outmsg);
-    pushlib.sendMessage(outmsg);
+    pushlib.sendMessageJson(outmsg);
 
   } else if (msg -> text == "/getstats") {
     char buf[100];
@@ -2208,7 +2210,7 @@ void cmdHandler(rx_message_t * msg) {
     doc["parse_mode"] = "HTML";
     doc["text"] = String(buf);
     serializeJson(doc, outmsg);
-    pushlib.sendMessage(outmsg);
+    pushlib.sendMessageJson(outmsg);
 
   } else if (msg -> text.startsWith("/setttl")) {
     String ttlstr = msg -> text.substring(msg -> text.indexOf('=')+1, msg -> text.length());
@@ -2220,14 +2222,14 @@ void cmdHandler(rx_message_t * msg) {
       sprintf(out, "TTL is now set at %d\n", ttl);
       doc["text"] = String(out);
       serializeJson(doc, outmsg);
-      pushlib.sendMessage(outmsg);
+      pushlib.sendMessageJson(outmsg);
     }
 
   } else if (msg -> text == "/help") {
     doc["text"] = "\n1. /help - this command \n2. /armstay - arm in stay mode\n3. /bypass - turn on full bypass\n4. /reboot - reboot esp\n5. /!<keys> - send cmds direct to panel\n6. /getstatus - get zone/system/light statuses\n7. /setttl=<TTL> - set timeout to close open zones\n8. /getstats - get memory useage stats\n9. /stopbus - stop vista bus\n10. /startbus - start vista bus\n11. /stopnotify - pause notifications\n12. /startnotify - unpause notifications\n";
     doc.remove("reply_markup"); //msg too long for markup
     serializeJson(doc, outmsg);
-    pushlib.sendMessage(outmsg);
+    pushlib.sendMessageJson(outmsg);
 
   }
 }

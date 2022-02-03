@@ -68,30 +68,11 @@ void PushLib::loop() {
 
 }
 
-bool PushLib::sendMessage(String msg) {
+//stringfied json with all parameters
+bool PushLib::sendMessageJson(String msg) {
   if (DEBUG_PUSHLIB > 0) printf("queueing msg %s\n", msg.c_str());
   saveMsgToQueue(msg);
 
-}
-
-bool PushLib::sendMessage(tx_message_t msg) {
-
-  msg.text = (String) messagePrefix + msg.text;
-  if (msg.chat_id == "") msg.chat_id = (String) telegramUserID;
-  StaticJsonDocument < 500 > doc;
-  #ifdef DEFAULT_PUSH_OPTIONS
-  if (msg.options == "")
-    msg.options = DEFAULT_PUSH_OPTIONS;
-  #endif
-  if (msg.options != "") {
-    deserializeJson(doc, msg.options.c_str());
-  }
-  doc["chat_id"] = msg.chat_id;
-  doc["text"] = msg.text;
-  String outmsg;
-  serializeJson(doc, outmsg);
-  if (DEBUG_PUSHLIB > 0) printf("queueing msg %s\n", outmsg.c_str());
-  saveMsgToQueue(outmsg);
 }
 
 void PushLib::postMessage(WiFiClientSecure *ipClient, String *msg) {
