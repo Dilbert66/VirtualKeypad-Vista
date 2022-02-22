@@ -240,6 +240,9 @@ void PushLib::getUpdatesSendTask(void * args) {
             if (root["result"][0]["callback_query"]["id"]) {
               int update_id = root["result"][0]["update_id"];
               update_id = update_id + 1;
+              //we ignore the first message on initial start to avoid a reboot loop
+              if (_this -> lastMsgReceived == 0) _this -> lastMsgReceived = update_id;
+             
               if (_this -> lastMsgReceived != update_id) {
                 String sender = root["result"][0]["callback_query"]["message"]["from"]["username"];
                 String text = root["result"][0]["callback_query"]["data"];
@@ -254,6 +257,9 @@ void PushLib::getUpdatesSendTask(void * args) {
             } else if (root["result"][0]["channel_post"]["id"]) { //not allowed right now. Enable if  you wish to use the bot in a private channel. Make sure it's a private channel!!!!!
               int update_id = root["result"][0]["update_id"];
               update_id = update_id + 1;
+              //we ignore the first message on initial start to avoid a reboot loop
+              if (_this -> lastMsgReceived == 0) _this -> lastMsgReceived = update_id;
+              
               if (_this -> lastMsgReceived != update_id) {
                 String sender = root["result"][0]["channel_post"]["message"]["from"]["username"];
                 String text = root["result"][0]["channel_post"]["message"]["text"];
@@ -269,6 +275,9 @@ void PushLib::getUpdatesSendTask(void * args) {
             } else if (root["result"][0]["message"]["text"]) {
               int update_id = root["result"][0]["update_id"];
               update_id = update_id + 1;
+              //we ignore the first message on initial start to avoid a reboot loop
+              if (_this -> lastMsgReceived == 0) _this -> lastMsgReceived = update_id;
+              
               if (_this -> lastMsgReceived != update_id) {
                 String sender = root["result"][0]["message"]["from"]["username"];
                 String text = root["result"][0]["message"]["text"];
