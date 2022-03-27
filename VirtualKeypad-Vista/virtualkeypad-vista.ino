@@ -666,6 +666,8 @@ void loop() {
       }
     }
     if (vista.cbuf[0] == 0xF7 && vista.newCmd) {
+      int kpaddrbit=0x01 << (kpaddr - 16);
+      if (!(vista.cbuf[3] & kpaddrbit)) return; // not addressed to this keypad        
       memcpy(p1, vista.statusFlags.prompt, 16);
       memcpy(p2, & vista.statusFlags.prompt[16], 16);
       p1[16] = '\0';
