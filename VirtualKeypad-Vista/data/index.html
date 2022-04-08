@@ -328,8 +328,17 @@
           </div>   
           <div class="keypad_button_row">
             <button type="button" id="btn_l" class="btn btn-outline-dark keypad_text keypad_button_slim" onclick="javascript:setPass();">LOGIN</button>
-          </div>     
- 
+          </div>   
+                    <div class="keypad_button_row">
+            <button type="button" id="btn_p1" class="btn btn-outline-dark keypad_text keypad_button_slim" >P1</button>
+          </div>    
+          
+           <div class="keypad_button_row">
+            <button type="button" id="btn_p2" class="btn btn-outline-dark keypad_text keypad_button_slim" >P2</button>
+          </div>    
+                    <div class="keypad_button_row">
+            <button type="button" id="btn_p3" class="btn btn-outline-dark keypad_text keypad_button_slim" >P3</button>
+          </div>    
           <!--
           <div class="keypad_button_row">
             <button type="button" id="btn_t" class="btn btn-outline-dark keypad_text keypad_button_slim">Reboot</button>
@@ -615,8 +624,7 @@ function encrypt(msg) {
 
                     }
                   }
-                }
-                if ("program_zone_0" in obj) {
+                } else if ("program_zone_0" in obj) {
                   //console.log(Object.keys(obj));
                   var obj_keys = Object.keys(obj);
                   for (var j = 0; j < obj_keys.length; j++) {
@@ -760,7 +768,8 @@ function encrypt(msg) {
             ws.send(a);
          } else if ($(this).attr("id") !=  "btn_c" && $(this).attr("id") !=  "btn_l" && $(this).attr("id") !=  "savePassword" && $(this).attr("id") !=  "modalCancel")
             alert("Websocket disconnected. Click 'CONN' or Refresh the browser");
-          console.log(action);
+            
+          //console.log(action);
         });
 
 

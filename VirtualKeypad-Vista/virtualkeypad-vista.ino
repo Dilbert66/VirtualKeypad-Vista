@@ -54,8 +54,6 @@
      
 */
 
-
-
 #include "vistatelegram_async.h" //telegram notify full async plugin with inbound bot cmd capability
 
 #define useOTA //comment this to disable OTA updates. 
@@ -68,10 +66,12 @@
 #include <ArduinoOTA.h>
 #endif
 
-
 #include <WiFi.h>
+
 #include <ESPmDNS.h>
+
 #include <AsyncTCP.h>
+
 #include <SPIFFS.h>
 
 #include <ESPAsyncWebServer.h>
@@ -119,14 +119,17 @@
 #define RELAYEXPANDER3 0
 #define RELAYEXPANDER4 0
 
-
 // Configures the ECP bus interface with the specified pins 
 #define RX_PIN 22
 #define TX_PIN 21
 #define MONITOR_PIN 18 // pin used to monitor the green TX line . See wiring diagram
 
-//keypad address
-#define KP_ADDR 17
+//assign a new virtual keypad address to each active partition using programs *190 - *196
+//and enter it below.  For unused partitions, use 0 as the keypad address.
+#define KP_ADDR1 17
+#define KP_ADDR2 0
+#define KP_ADDR3 0
+
 #define DEBUG 1
 
 
@@ -143,8 +146,8 @@ String telegramAllowedIDs[] = {
 }; //comma separated list  of user/group chat ids  allowed to send cmds to the bot. 
 
 
-byte notifyZones[] = {
-}; //commar separated list of zones that you want push notifications on change
+
+byte notifyZones[] = {}; //commar separated list of zones that you want push notifications on change
 
 const char * FAULT = "FAULT"; //change these to suit your panel language 
 const char * BYPAS = "BYPAS";
@@ -203,7 +206,7 @@ AsyncWebSocket ws("/ws");
 size_t content_len;
 
 AES aes;
-PushLib pushlib(telegramBotToken,telegramUserID,telegramMsgPrefix);
+PushLib pushlib(telegramBotToken, telegramUserID, telegramMsgPrefix);
 
 std::string key = std::string(password).append(16 - key.length(), '0');
 char * aeskey = & key[0];
@@ -233,9 +236,10 @@ bool sent, vh, pauseNotifications;
 char p1[18];
 char p2[18];
 char msg[50];
-std::string lastp1;
-std::string lastp2;
-int lastbeeps;
+uint8_t partitions[3];
+uint8_t keypadCount;
+uint8_t activePartition=1;
+
 unsigned long refreshTime, pingTime, lowBatteryTime;
 int lastLedState, upCount;
 
@@ -258,7 +262,7 @@ struct alarmStatusType {
   uint8_t zone;
   char prompt[17];
 };
-
+/*
 struct {
   unsigned long time;
   bool state;
@@ -267,6 +271,7 @@ struct {
   char p2[17];
 }
 systemPrompt;
+*/
 
 struct lrrType {
   int code;
@@ -294,7 +299,17 @@ struct lightStates {
   bool armed;
 };
 
-lightStates currentLightState, previousLightState, emptyLightState;
+struct {
+  sysState previousSystemState;
+  lightStates previousLightState;
+  std::string lastp1;
+  std::string lastp2;
+  int lastbeeps;
+}
+partitionStates[3];
+
+lightStates currentLightState, previousLightState;
+
 enum lrrtype {
   user_t,
   zone_t
@@ -307,12 +322,12 @@ lrrType lrr, previousLrr, emptyLrr;
 unsigned long asteriskTime, sendWaitTime;
 bool forceZoneUpdate;
 
-void pushNotification(String text,String receiverid="") {
+void pushNotification(String text, String receiverid = "") {
   if (pauseNotifications) return;
   String outmsg;
   StaticJsonDocument < 300 > doc;
-  doc["chat_id"] = receiverid!=""?receiverid:(String) telegramUserID;
-  doc["text"] =text;
+  doc["chat_id"] = receiverid != "" ? receiverid : (String) telegramUserID;
+  doc["text"] = text;
   serializeJson(doc, outmsg);
   pushlib.sendMessageJson(outmsg);
 
@@ -368,7 +383,7 @@ void publishMsg(String msg) {
   doc["event_info"] = msg.c_str();
   serializeJson(doc, outas);
   String out = encrypt(outas);
-  //Serial.printf("publishmsg: %s\n",out.c_str());
+ // Serial.printf("publishmsg: %s\n",out.c_str());
   ws.textAll(out.c_str());
 }
 
@@ -408,7 +423,7 @@ void publishZones(const char * zoneType, uint8_t * zoneGroup, int size) {
     serializeJson(doc, outas);
     //Serial.printf("zone output=%s\n",outas);
     String out = encrypt(outas);
-    //Serial.printf("publishszones: %s\n",out.c_str());
+   // Serial.printf("publishzones: %s\n",out.c_str());
     ws.textAll(out.c_str());
 
   }
@@ -435,7 +450,7 @@ void setup() {
 
   forceZoneUpdate = true;
   pinMode(LED_BUILTIN, OUTPUT); // LED pin as output.
-  vista.setKpAddr(KP_ADDR);
+  vista.setKpAddr(KP_ADDR1);
   WiFi.mode(WIFI_STA);
   WiFi.begin(wifiSSID, wifiPassword);
 
@@ -461,20 +476,19 @@ void setup() {
     }
   }
   SPIFFS.begin();
-  
+
   File root = SPIFFS.open("/");
 
   File file = root.openNextFile();
   Serial.println("Opening SPIFFS");
-  while(file){
- 
-      Serial.print("FILE: ");
-      Serial.println(file.name());
- 
-      file = root.openNextFile();
+  while (file) {
+
+    Serial.print("FILE: ");
+    Serial.println(file.name());
+
+    file = root.openNextFile();
   }
 
-  
   ws.onEvent(onWsEvent);
   server.addHandler( & ws);
   server.serveStatic("/", SPIFFS, "/").setDefaultFile("index.html");
@@ -501,7 +515,7 @@ void setup() {
   });
   ArduinoOTA.onEnd([]() {
     pushlib.begin();
-    vista.begin(RX_PIN, TX_PIN, KP_ADDR, MONITOR_PIN);
+    vista.begin(RX_PIN, TX_PIN, KP_ADDR1, MONITOR_PIN);
     Serial.println(F("\nEnd"));
   });
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
@@ -524,7 +538,7 @@ void setup() {
   Serial.print(F("IP address: "));
   Serial.println(WiFi.localIP());
 
-  vista.begin(RX_PIN, TX_PIN, KP_ADDR, MONITOR_PIN);
+  vista.begin(RX_PIN, TX_PIN, KP_ADDR1, MONITOR_PIN);
 
   vista.lrrSupervisor = LRRSUPERVISOR; //if we don't have a monitoring lrr supervisor we emulate one if set to true
   //set addresses of expander emulators
@@ -538,15 +552,14 @@ void setup() {
   vista.zoneExpanders[7].expansionAddr = RELAYEXPANDER4;
   Serial.println(F("Vista ECP Interface is online."));
 
-#ifdef TELEGRAM_PUSH
+  #ifdef TELEGRAM_PUSH
   pushlib.addCmdHandler( & cmdHandler);
-#endif
+  #endif
   pauseNotifications = false;
   pushlib.begin();
-  
+
   char buf[100];
   pushNotification("System restarted");
-
 
 }
 
@@ -586,6 +599,17 @@ void loop() {
     ArduinoOTA.handle();
   #endif
 
+  /*
+         if (vista.keybusConnected && millis() - refreshFlagsTime > 60000  && !vista.statusFlags.programMode) {
+                refreshFlagsTime=millis();
+                for (uint8_t partition = 1; partition < 4; partition++) {
+                     partitionStates[partition-1].refreshStatus=true;
+                     partitionStates[partition-1].refreshLights=true;
+
+               }
+               
+        }
+  */
   //if data to be sent, we ensure we process it quickly to avoid delays with the F6 cmd
   sendWaitTime = millis();
   vh = vista.handle();
@@ -666,24 +690,28 @@ void loop() {
       }
     }
     if (vista.cbuf[0] == 0xF7 && vista.newCmd) {
-      int kpaddrbit=0x01 << (kpaddr - 16);
-      if (!(vista.cbuf[3] & kpaddrbit)) return; // not addressed to this keypad        
+      //int kpaddrbit=0x01 << (activeKpAddr - 16);
+      getPartitions(vista.cbuf[3]);
       memcpy(p1, vista.statusFlags.prompt, 16);
       memcpy(p2, & vista.statusFlags.prompt[16], 16);
       p1[16] = '\0';
       p2[16] = '\0';
-      if (lastp1 != p1 || lastp2 != p2) {
-        publishLcd(p1, p2);
-      }
-      if (lastbeeps != vista.statusFlags.beeps) {
-        char tmp[4] = {
-          0
-        };
-        sprintf(tmp, "%d", vista.statusFlags.beeps);
-        // mqttPublish(mqttBeepTopic, tmp);
+      for (uint8_t partition = 1; partition < 4; partition++) {
+        if ( partitions[partition-1]) {  //we only display the active partition data
+          if (partition==activePartition && (partitionStates[partition - 1].lastp1 != p1 || partitionStates[partition - 1].lastp2 != p2) ) {
+            publishLcd(p1, p2);
+          }
+          // if (partitionStates[partition - 1].lastbeeps != vista.statusFlags.beeps)
+          //  beepsCallback(to_string(vista.statusFlags.beeps), partition);
+          partitionStates[partition - 1].lastp1 = p1;
+          partitionStates[partition - 1].lastp2 = p2;
+          partitionStates[partition - 1].lastbeeps = vista.statusFlags.beeps;
+
+        
+        }
+       
       }
 
-      lastbeeps = vista.statusFlags.beeps;
       Serial.print(F("Prompt1:"));
       Serial.println(p1);
       Serial.print(F("Prompt2:"));
@@ -741,6 +769,10 @@ void loop() {
     currentLightState.alarm = false;
     currentLightState.armed = false;
     currentLightState.ac = false;
+    currentLightState.bat = false;
+    currentLightState.trouble = false;
+    currentLightState.bypass = false;
+    currentLightState.chime = false;
 
     if (vista.statusFlags.armedAway || vista.statusFlags.armedStay) {
       if (vista.statusFlags.night) {
@@ -765,7 +797,7 @@ void loop() {
       currentSystemState = sdisarmed;
       currentLightState.ready = true;
 
-      for (int x = 0; x < MAX_ZONES; x++) {
+      /*for (int x = 0; x < MAX_ZONES; x++) {
         if ((!zones[x + 1].bypass && zones[x + 1].open) || (zones[x + 1].bypass && !vista.statusFlags.bypass)) {
           forceZoneUpdate = true;
           zones[x + 1].open = false;
@@ -781,15 +813,17 @@ void loop() {
         }
         zones[x + 1].alarm = false;
         zones[x + 1].trouble = false;
-      }
+      }*/
     }
     //system armed prompt type
+    /*
     if (strstr(p1, ARMED) && vista.statusFlags.systemFlag) {
       strncpy(systemPrompt.p1, p1, 17);
       strncpy(systemPrompt.p2, p2, 17);
       systemPrompt.time = millis();
       systemPrompt.state = true;
     }
+    */
     //zone fire status
     if (strstr(p1, FIRE) && !vista.statusFlags.systemFlag) {
       fireStatus.zone = vista.statusFlags.zone;
@@ -808,7 +842,7 @@ void loop() {
           pushNotification(msg);
           alarmStatus.zone = vista.statusFlags.zone;
           alarmStatus.time = millis();
-          alarmStatus.state = true;               
+          alarmStatus.state = true;
         }
         zones[vista.statusFlags.zone].alarm = true;
         zones[vista.statusFlags.zone].time = millis();
@@ -884,12 +918,12 @@ void loop() {
       currentLightState.fire = true;
       currentSystemState = striggered;
     } else currentLightState.fire = false;
-    
+
     if (vista.statusFlags.inAlarm) {
       currentSystemState = striggered;
       alarmStatus.zone = 99;
       alarmStatus.time = millis();
-      alarmStatus.state = true; 
+      alarmStatus.state = true;
     }
 
     if (vista.statusFlags.chime) {
@@ -914,155 +948,152 @@ void loop() {
 
     //clear alarm statuses  when timer expires
     if ((millis() - fireStatus.time) > TTL) fireStatus.state = false;
-    if ((millis() - alarmStatus.time) > TTL) alarmStatus.state = false;    
+    if ((millis() - alarmStatus.time) > TTL) alarmStatus.state = false;
     if ((millis() - panicStatus.time) > TTL) panicStatus.state = false;
-    if ((millis() - systemPrompt.time) > TTL) systemPrompt.state = false;
+    //if ((millis() - systemPrompt.time) > TTL) systemPrompt.state = false;
     if ((millis() - lowBatteryTime) > TTL) currentLightState.bat = false;
     if (currentLightState.ac && !currentLightState.bat)
       currentLightState.trouble = false;
     else
       currentLightState.trouble = true;
-  
-    currentLightState.alarm=alarmStatus.state;
+
+    currentLightState.alarm = alarmStatus.state;
     //system status message
 
     uint8_t statusLights;
-    if (currentSystemState != previousSystemState)
-      switch (currentSystemState) {
+    char msg[100];
+    if (keypadCount==1)  //only push notifications if we are not viewing a secondary partition
+     for (uint8_t partition = 1; partition < 4; partition++) {
+      if (partitions[partition - 1]) {
+        if (currentSystemState != partitionStates[partition - 1].previousSystemState  )
+          switch (currentSystemState) {
 
-      case striggered:
-        //publish system msg
-        pushNotification("Panel alarm triggered");
-        //mqttPublish(mqttSystemStatusTopic, STATUS_TRIGGERED);
-        break;
-      case sarmedaway:
-        statusLights != 2;
-        pushNotification("Panel armed away");
-        //publish system msg
-        // mqttPublish(mqttSystemStatusTopic, STATUS_ARMED);
-        break;
-      case sarmednight:
-        statusLights != 2;
-        pushNotification("Panel armed night");
-        //publish system msg
-        // mqttPublish(mqttSystemStatusTopic, STATUS_NIGHT);
-        break;
-      case sarmedstay:
-        statusLights != 2;
-        pushNotification("Panel armed stay");
-        //publish system msg
-        // mqttPublish(mqttSystemStatusTopic, STATUS_STAY);
-        break;
-      case sinstant:
-        statusLights != 2;
-        pushNotification("Panel armed instant");
-        //publish system msg
-        // mqttPublish(mqttSystemStatusTopic, STATUS_STAY);
-        break;
-      case sunavailable:
-        statusLights &= 0xfe;
-        pushNotification("Panel disarmed , zones open");
-        //publish system msg
-        // mqttPublish(mqttSystemStatusTopic, STATUS_NOT_READY);
-        break;
-      case sdisarmed:
-        //publish system msg
-        pushNotification("Panel disarmed");
-        //mqttPublish(mqttSystemStatusTopic, STATUS_OFF);
-        break;
-      default:
-        statusLights &= 0xfe;
-        //publish system msg  
-        pushNotification("Panel not ready, zones open");
-        //mqttPublish(mqttSystemStatusTopic, STATUS_NOT_READY);
-        break;
+          case striggered:
+            //publish system msg
+            snprintf(msg, 100, "Panel alarm triggered - Partition %d", partition);
+            pushNotification(msg);
+            //mqttPublish(mqttSystemStatusTopic, STATUS_TRIGGERED);
+            break;
+          case sarmedaway:
+            statusLights != 2;
+            snprintf(msg, 100, "Panel alarm away - Partition %d", partition);
+            pushNotification(msg);
+            //publish system msg
+            // mqttPublish(mqttSystemStatusTopic, STATUS_ARMED);
+            break;
+          case sarmednight:
+            statusLights != 2;
+            snprintf(msg, 100, "Panel alarm night - Partition %d", partition);
+            pushNotification(msg);
+            //publish system msg
+            // mqttPublish(mqttSystemStatusTopic, STATUS_NIGHT);
+            break;
+          case sarmedstay:
+            statusLights != 2;
+            snprintf(msg, 100, "Panel alarm stay - Partition %d", partition);
+            pushNotification(msg);
+            //publish system msg
+            // mqttPublish(mqttSystemStatusTopic, STATUS_STAY);
+            break;
+          case sinstant:
+            statusLights != 2;
+            snprintf(msg, 100, "Panel alarm instant - Partition %d", partition);
+            pushNotification(msg);
+            //publish system msg
+            // mqttPublish(mqttSystemStatusTopic, STATUS_STAY);
+            break;
+          case sunavailable:
+            statusLights &= 0xfe;
+            snprintf(msg, 100, "Panel disarmed - zones open - Partition %d", partition);
+            pushNotification(msg);
+            //publish system msg
+            // mqttPublish(mqttSystemStatusTopic, STATUS_NOT_READY);
+            break;
+          case sdisarmed:
+            //publish system msg
+            snprintf(msg, 100, "Panel disarmed - Partition %d", partition);
+            pushNotification(msg);
+            //mqttPublish(mqttSystemStatusTopic, STATUS_OFF);
+            break;
+          default:
+            statusLights &= 0xfe;
+            //publish system msg  
+            snprintf(msg, 100, "Panel not ready - zones open - Partition %d", partition);
+            pushNotification(msg);
+            //mqttPublish(mqttSystemStatusTopic, STATUS_NOT_READY);
+            break;
+          }
+        partitionStates[partition - 1].previousSystemState = currentSystemState;
+        if (strstr(vista.statusFlags.prompt, HITSTAR))
+            alarm_keypress_partition("*", partition);         
       }
+
+    }
 
     //publish status on change only - keeps api traffic down
 
-    if (changedLightStates() || forceZoneUpdate) {
-      uint8_t lights = 0;
-
-      if (currentLightState.ready)
-        lights |= 1;
-      else
-        lights &= ~1;
-      if (currentLightState.armed)
-        lights |= 2;
-      else
-        lights &= ~2;
-      if (currentLightState.trouble)
-        lights |= 0x10;
-      else
-        lights &= ~0x10;
-      if (currentLightState.fire)
-        lights |= 0x40;
-      else
-        lights &= ~0x40;
-      if (currentLightState.bypass)
-        lights |= 8;
-      else
-        lights &= ~8;
-      if (vista.statusFlags.programMode)
-        lights |= 0x20;
-      else
-        lights &= ~0x20;
-      if (currentLightState.chime)
-        lights |= 0x80;
-      else
-        lights &= ~0x80;    
-
-      publishStatus("status_lights", lights);
-      publishStatus("power_status", currentLightState.ac);
-      //Serial.printf("AC=%d,bat=%d,trouble=%d,lights=%02X\n",currentLightState.ac,currentLightState.bat,currentLightState.trouble,lights);       
+    if ((partitions[activePartition-1] && changedLightStates(currentLightState,partitionStates[activePartition-1].previousLightState)) || forceZoneUpdate) {
+       uint8_t lights=getLights(currentLightState);
+    
+        publishStatus("status_lights", lights);
+        publishStatus("power_status", currentLightState.ac);
+      //Serial.printf("AC=%d,bat=%d,trouble=%d,lights=%02X\n",currentLightState.ac,currentLightState.bat,currentLightState.trouble,lights);           
+  
 
     }
-    if (currentLightState.fire != previousLightState.fire) {
-      char msg[100];
-      snprintf(msg, 100, "Panel file alarm state is %s", currentLightState.fire ? "on" : "off");
-      pushNotification(msg);
 
-    }
-    if (currentLightState.alarm != previousLightState.alarm) {
-      char msg[100];
-      snprintf(msg, 100, "Panel alarm state is %s", currentLightState.alarm ? "on" : "off");
-      pushNotification(msg);
-    }
-    if (currentLightState.trouble != previousLightState.trouble) {
-      char msg[100];
-      snprintf(msg, 100, "Panel trouble status is %s", currentLightState.trouble ? "on" : "off");
-      pushNotification(msg);
-    }
-    //if (currentLightState.chime != previousLightState.chime)
-    // mqttPublish(mqttStatusTopic, "CHIME", currentLightState.chime);
-    // if (currentLightState.away != previousLightState.away)
-    // mqttPublish(mqttStatusTopic, "AWAY", currentLightState.away);
-    if (currentLightState.ac != previousLightState.ac) {
-      char msg[100];
-      snprintf(msg, 100, "Panel ac power status is %s", currentLightState.ac ? "OK" : "NoAC");
-      pushNotification(msg);
+    if (keypadCount==1)
+     for (uint8_t partition = 1; partition < 4; partition++) {
+      if (partitions[partition - 1]) {
 
-    } //mqttPublish(mqttStatusTopic, "AC", currentLightState.ac);
-    //if (currentLightState.stay != previousLightState.stay)
-    // mqttPublish(mqttStatusTopic, "STAY", currentLightState.stay);
-    //if (currentLightState.night != previousLightState.night)
-    // mqttPublish(mqttStatusTopic, "NIGHT", currentLightState.night);
-    // if (currentLightState.instant != previousLightState.instant)
-    //mqttPublish(mqttStatusTopic, "INST", currentLightState.instant);
-    if (currentLightState.bat != previousLightState.bat) {
-      char msg[100];
-      snprintf(msg, 100, "Panel battery status is %s", currentLightState.bat ? "NotOK" : "OK");
-      pushNotification(msg);
-    } //mqttPublish(mqttStatusTopic, "BATTERY", currentLightState.bat);
-    if (currentLightState.bypass != previousLightState.bypass) {
-      char msg[100];
-      snprintf(msg, 100, "Panel bypass is %s", currentLightState.bypass ? "active" : "off");
-      pushNotification(msg);
-    } // mqttPublish(mqttStatusTopic, "BYPASS", currentLightState.bypass);
-    // if (currentLightState.ready != previousLightState.ready)
-    // mqttPublish(mqttStatusTopic, "READY", currentLightState.ready);
-    // if (currentLightState.armed != previousLightState.armed)
-    // mqttPublish(mqttStatusTopic, "ARMED", currentLightState.armed);
+        //publish status on change only - keeps api traffic down
+        previousLightState = partitionStates[partition - 1].previousLightState;
+
+        if (currentLightState.fire != previousLightState.fire) {
+          snprintf(msg, 100, "Panel file alarm state is %s for partition %d", currentLightState.fire ? "on" : "off", partition);
+          pushNotification(msg);
+
+        }
+        if (currentLightState.alarm != previousLightState.alarm) {
+          snprintf(msg, 100, "Panel alarm state is %s for partition %d", currentLightState.alarm ? "on" : "off", partition);
+          pushNotification(msg);
+        }
+        if (currentLightState.trouble != previousLightState.trouble) {
+          snprintf(msg, 100, "Panel trouble status is %s for partition %d", currentLightState.trouble ? "on" : "off", partition);
+          pushNotification(msg);
+        }
+        //if (currentLightState.chime != previousLightState.chime)
+        // mqttPublish(mqttStatusTopic, "CHIME", currentLightState.chime);
+        // if (currentLightState.away != previousLightState.away)
+        // mqttPublish(mqttStatusTopic, "AWAY", currentLightState.away);
+        if (currentLightState.ac != previousLightState.ac) {
+          snprintf(msg, 100, "Panel ac power status is %s for partition %d", currentLightState.ac ? "OK" : "NoAC", partition);
+          pushNotification(msg);
+
+        } //mqttPublish(mqttStatusTopic, "AC", currentLightState.ac);
+        //if (currentLightState.stay != previousLightState.stay)
+        // mqttPublish(mqttStatusTopic, "STAY", currentLightState.stay);
+        //if (currentLightState.night != previousLightState.night)
+        // mqttPublish(mqttStatusTopic, "NIGHT", currentLightState.night);
+        // if (currentLightState.instant != previousLightState.instant)
+        //mqttPublish(mqttStatusTopic, "INST", currentLightState.instant);
+        if (currentLightState.bat != previousLightState.bat) {
+          snprintf(msg, 100, "Panel battery status is %s for partition %d", currentLightState.bat ? "NotOK" : "OK", partition);
+          pushNotification(msg);
+        } //mqttPublish(mqttStatusTopic, "BATTERY", currentLightState.bat);
+        if (currentLightState.bypass != previousLightState.bypass) {
+          snprintf(msg, 100, "Panel bypass is %s for partition %d", currentLightState.bypass ? "active" : "off", partition);
+          pushNotification(msg);
+        } // mqttPublish(mqttStatusTopic, "BYPASS", currentLightState.bypass);
+        // if (currentLightState.ready != previousLightState.ready)
+        // mqttPublish(mqttStatusTopic, "READY", currentLightState.ready);
+        // if (currentLightState.armed != previousLightState.armed)
+        // mqttPublish(mqttStatusTopic, "ARMED", currentLightState.armed);
+
+        partitionStates[partition - 1].previousLightState = currentLightState;
+        
+      }
+    }
 
     //clears restored zones after timeout
     for (int x = 0; x < MAX_ZONES; x++) {
@@ -1070,7 +1101,6 @@ void loop() {
         forceZoneUpdate = true;
         //publish zone status
         if (inList(x + 1, notifyZones, sizeof(notifyZones))) {
-          char msg[100];
           snprintf(msg, 100, "Zone %d is now closed (timeout)", x + 1);
           pushNotification(msg);
         }
@@ -1110,25 +1140,67 @@ void loop() {
       publishZones("bypass_zone", bypassGroup, (MAX_ZONES / 8) - 1);
     }
 
-    previousSystemState = currentSystemState;
-    previousLightState = currentLightState;
-
     if (millis() - refreshTime > 30000) {
-      publishMsg("");
-      publishLcd(p1, p2);
+       publishMsg("");
       refreshTime = millis();
     }
 
     previousLrr = lrr;
-    if (strstr(vista.statusFlags.prompt, HITSTAR))
-      vista.write('*');
-
     forceZoneUpdate = false;
 
   }
 
 }
 
+void alarm_keypress_partition(const char * keys, int partition) {
+  uint8_t addr = 0;
+  switch (partition) {
+  case 1:
+    addr = KP_ADDR1;
+    break;
+  case 2:
+    addr = KP_ADDR2;
+    break;
+  case 3:
+    addr = KP_ADDR3;
+    break;
+  default:
+    break;
+  }
+  if (addr > 0 and addr < 24)
+    vista.write(keys, addr);
+}
+
+void getPartitions(uint8_t mask) {
+  memset(partitions, 0, sizeof(partitions));
+  keypadCount=0;
+  if (KP_ADDR1 > 15 && (mask & (0x01 << (KP_ADDR1 - 16)))) {partitions[0] = 1;keypadCount++;}
+  if (KP_ADDR2 > 15 && (mask & (0x01 << (KP_ADDR2 - 16)))) {partitions[1] = 1;keypadCount++;}
+  if (KP_ADDR3 > 15 && (mask & (0x01 << (KP_ADDR3 - 16)))) {partitions[2] = 1;keypadCount++;}
+}
+
+void setKpAddr(uint8_t partition) {
+    uint8_t a;
+    switch (partition) {
+      case 1: activePartition=1;a= KP_ADDR1;break;
+      case 2: activePartition=2;a= KP_ADDR2;break;
+      case 3: activePartition=3;a= KP_ADDR3;break;
+      default: return;
+    }
+    if (a > 15 and a < 24) {
+     vista.setKpAddr(a);
+     publishLcd((char *)partitionStates[partition - 1].lastp1.c_str(), (char *)partitionStates[partition - 1].lastp2.c_str()); 
+     
+      uint8_t lights=getLights(partitionStates[partition - 1].previousLightState);
+    
+        publishStatus("status_lights", lights);
+        publishStatus("power_status", (partitionStates[partition - 1].previousLightState.ac));
+   
+    }
+     char msg[14];
+    sprintf(msg, "Partition: %d",partition);
+    publishMsg(msg);
+}
 uint8_t getZoneFromChannel(uint8_t deviceAddress, uint8_t channel) {
 
   switch (deviceAddress) {
@@ -1147,10 +1219,7 @@ uint8_t getZoneFromChannel(uint8_t deviceAddress, uint8_t channel) {
   }
 
 }
-void set_keypad_address(int addr) {
-  if (addr > 0 and addr < 24)
-    vista.setKpAddr(addr);
-}
+
 
 long int toInt(const char * s) {
   char * p;
@@ -1835,8 +1904,41 @@ const __FlashStringHelper * statusText(int statusCode) {
     return F("ZUnknown");
   }
 }
-
-bool changedLightStates() {
+uint8_t getLights(lightStates currentLightState) {
+  uint8_t lights = 0;
+      if (currentLightState.ready)
+        lights |= 1;
+      else
+        lights &= ~1;
+      if (currentLightState.armed)
+        lights |= 2;
+      else
+        lights &= ~2;
+      if (currentLightState.trouble)
+        lights |= 0x10;
+      else
+        lights &= ~0x10;
+      if (currentLightState.fire)
+        lights |= 0x40;
+      else
+        lights &= ~0x40;
+      if (currentLightState.bypass)
+        lights |= 8;
+      else
+        lights &= ~8;
+      if (vista.statusFlags.programMode)
+        lights |= 0x20;
+      else
+        lights &= ~0x20;
+      if (currentLightState.chime)
+        lights |= 0x80;
+      else
+        lights &= ~0x80;
+    
+      return lights;
+}
+    
+bool changedLightStates(lightStates currentLightState, lightStates previousLightState) {
   if (currentLightState.fire != previousLightState.fire)
     return true;
   if (currentLightState.alarm != previousLightState.alarm)
@@ -1924,17 +2026,22 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
                 if (strcmp(v, "s") == 0) {
                   vista.write(accessCode);
                   vista.write("3");
-                }
-              else if (strcmp(v, "w") == 0) {
+                } else if (strcmp(v, "w") == 0) {
                 vista.write(accessCode);
                 vista.write("2");
               } else if (strcmp(v, "c") == 0) {
                 vista.write(accessCode);
                 vista.write("9");
-              } else if (strcmp(v, "x") == 0 && !currentLightState.armed) {
+              } else if (strcmp(v, "x") == 0 && !partitionStates[activePartition-1].previousLightState.armed) {
                 vista.write(accessCode);
                 vista.write("1");
-              } else vista.write(v);
+              } else if (strcmp(v, "p1") == 0) {
+                  setKpAddr(1);
+              } else if (strcmp(v, "p2") == 0) {
+                  setKpAddr(2);             
+              } else if (strcmp(v, "p3") == 0) {  
+                  setKpAddr(3);
+              }  else vista.write(v);
               Serial.printf("got key %s\n", v);
             }
           }
@@ -2014,12 +2121,10 @@ String decrypt(String wsmsg) {
   } else return "";
 }
 
-
 uint8_t getrnd() {
   uint8_t rand = (uint8_t) random(0, 0xff);
   return rand;
 }
-
 
 // Generate a random initialization vector
 void gen_iv(byte * iv) {
@@ -2103,14 +2208,13 @@ String getSystemLights() {
   if (currentLightState.bat)
     s = s + "BAT|";
   if (currentLightState.chime)
-    s=s+"CHM|";
+    s = s + "CHM|";
   if (vista.statusFlags.programMode)
     s = s + "Program|";
   s = s + "\n";
 
   return s;
 }
-
 
 //telegram callback to handle bot commands
 void cmdHandler(rx_message_t * msg) {
@@ -2120,7 +2224,7 @@ void cmdHandler(rx_message_t * msg) {
   for (x; x < sz; x++) {
     if (telegramAllowedIDs[x] == msg -> chat_id) break;
   }
-  if (x == sz && msg ->chat_id != telegramUserID) {
+  if (x == sz && msg -> chat_id != telegramUserID) {
     Serial.printf("Chat ID %s not allowed to send cmds", msg -> chat_id.c_str());
     return;
   }
@@ -2134,25 +2238,31 @@ void cmdHandler(rx_message_t * msg) {
   String sub = msg -> text.substring(0, 2);
 
   if (msg -> text == "/armstay") {
-    doc["text"] = "sending armed stay";
-    serializeJson(doc, outmsg);
-    pushlib.sendMessageJson(outmsg);
-    vista.write(accessCode);
-    vista.write("3");
+    if (!partitionStates[0].previousLightState.armed) {      
+        doc["text"] = "sending armed stay";
+        serializeJson(doc, outmsg);
+        pushlib.sendMessageJson(outmsg);
+        vista.write(accessCode);
+        vista.write("3");
+    }
 
   } else if (msg -> text == "/armaway") {
-    doc["text"] = "sending armed away";
-    serializeJson(doc, outmsg);
-    pushlib.sendMessageJson(outmsg);
-    vista.write(accessCode);
-    vista.write("2");
+    if (!partitionStates[0].previousLightState.armed) {        
+        doc["text"] = "sending armed away";
+        serializeJson(doc, outmsg);
+        pushlib.sendMessageJson(outmsg);
+        vista.write(accessCode);
+        vista.write("2");
+    }
 
   } else if (msg -> text == "/bypass") {
-    doc["text"] = "Sending bypass...";
-    serializeJson(doc, outmsg);
-    pushlib.sendMessageJson(outmsg);
-    vista.write(accessCode);
-    vista.write("6#");
+    if (!partitionStates[0].previousLightState.armed) {        
+        doc["text"] = "Sending bypass...";
+        serializeJson(doc, outmsg);
+        pushlib.sendMessageJson(outmsg);
+        vista.write(accessCode);
+        vista.write("6#");
+    }
 
   } else if (msg -> text == "/reboot") {
     doc["text"] = "Rebooting...";
@@ -2177,19 +2287,29 @@ void cmdHandler(rx_message_t * msg) {
     pushlib.sendMessageJson(outmsg);
 
   } else if (sub == "/!") {
+      
     String cmd = msg -> text.substring(2, msg -> text.length());
     printf("cmd = %s\n", cmd.c_str());
     vista.write(cmd.c_str());
 
-  } else if (msg -> text == "/stopbus") {
+  }  else if (sub == "/#") {
+     int p;
+    String pstr = msg -> text.substring(2,3);     
+    sscanf(pstr.c_str(), "%d", &p);     
+    String cmd = msg -> text.substring(3, msg -> text.length());
+    printf("cmd = %s,partition=%d,pstr=%s\n", cmd.c_str(),p,pstr.c_str());
+    if (p > 0 && p < 4)
+        alarm_keypress_partition(cmd.c_str(),p);
+
+  }  else if (msg -> text == "/stopbus") {
     vista.stop();
-    doc["text"] = "vista bus stopped...";
+    doc["text"] = "Vista bus stopped...";
     serializeJson(doc, outmsg);
     pushlib.sendMessageJson(outmsg);
 
   } else if (msg -> text == "/startbus") {
     vista.stop();
-    vista.begin(RX_PIN, TX_PIN, KP_ADDR, MONITOR_PIN);
+    vista.begin(RX_PIN, TX_PIN, KP_ADDR1, MONITOR_PIN);
     doc["text"] = "Vista bus started..";
     serializeJson(doc, outmsg);
     pushlib.sendMessageJson(outmsg);
@@ -2215,9 +2335,9 @@ void cmdHandler(rx_message_t * msg) {
     pushlib.sendMessageJson(outmsg);
 
   } else if (msg -> text.startsWith("/setttl")) {
-    String ttlstr = msg -> text.substring(msg -> text.indexOf('=')+1, msg -> text.length());
+    String ttlstr = msg -> text.substring(msg -> text.indexOf('=') + 1, msg -> text.length());
     int ttl;
-    sscanf(ttlstr.c_str(), "%d", &ttl);
+    sscanf(ttlstr.c_str(), "%d", & ttl);
     if (ttl > 0 && ttl < 60) {
       TTL = ttl * 1000;
       char out[40];
@@ -2227,8 +2347,21 @@ void cmdHandler(rx_message_t * msg) {
       pushlib.sendMessageJson(outmsg);
     }
 
+  } else if (msg -> text.startsWith("/setpartition")) {
+    String pstr = msg -> text.substring(msg -> text.indexOf('=') + 1, msg -> text.length());
+    int p;
+    sscanf(pstr.c_str(), "%d", & p);
+    if (p > 0 && p < 4) {
+      setKpAddr(p);
+      char out[40];
+      sprintf(out, "Partition is now set to %d\n", p);
+      doc["text"] = String(out);
+      serializeJson(doc, outmsg);
+      pushlib.sendMessageJson(outmsg);
+    }
+
   } else if (msg -> text == "/help") {
-    doc["text"] = "\n1. /help - this command \n2. /armstay - arm in stay mode\n3. /bypass - turn on full bypass\n4. /reboot - reboot esp\n5. /!<keys> - send cmds direct to panel\n6. /getstatus - get zone/system/light statuses\n7. /setttl=<TTL> - set timeout to close open zones\n8. /getstats - get memory useage stats\n9. /stopbus - stop vista bus\n10. /startbus - start vista bus\n11. /stopnotify - pause notifications\n12. /startnotify - unpause notifications\n";
+    doc["text"] = "\n1. /help - this command \n2. /armstay - arm in stay mode\n3. /bypass - turn on full bypass\n4. /reboot - reboot esp\n5. /!<keys> - send cmds direct to panel\n6. /getstatus - get zone/system/light statuses\n7. /setttl=<TTL> - set timeout to close open zones\n8. /getstats - get memory useage stats\n9. /stopbus - stop vista bus\n10. /startbus - start vista bus\n11. /stopnotify - pause notifications\n12. /startnotify - unpause notifications./n13. /setpartition=<partition> - set default partition\n14. /#<p><keys> - send cmds to partition p";
     doc.remove("reply_markup"); //msg too long for markup
     serializeJson(doc, outmsg);
     pushlib.sendMessageJson(outmsg);
