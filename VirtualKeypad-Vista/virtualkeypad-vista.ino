@@ -305,6 +305,7 @@ struct {
   std::string lastp1;
   std::string lastp2;
   int lastbeeps;
+  bool active;
 }
 partitionStates[3];
 
@@ -1174,9 +1175,9 @@ void alarm_keypress_partition(const char * keys, int partition) {
 void getPartitions(uint8_t mask) {
   memset(partitions, 0, sizeof(partitions));
   keypadCount=0;
-  if (KP_ADDR1 > 15 && (mask & (0x01 << (KP_ADDR1 - 16)))) {partitions[0] = 1;keypadCount++;}
-  if (KP_ADDR2 > 15 && (mask & (0x01 << (KP_ADDR2 - 16)))) {partitions[1] = 1;keypadCount++;}
-  if (KP_ADDR3 > 15 && (mask & (0x01 << (KP_ADDR3 - 16)))) {partitions[2] = 1;keypadCount++;}
+  if (KP_ADDR1 > 15 && (mask & (0x01 << (KP_ADDR1 - 16)))) {partitions[0] = 1;partitionStates[0].active=true;keypadCount++;}
+  if (KP_ADDR2 > 15 && (mask & (0x01 << (KP_ADDR2 - 16)))) {partitions[1] = 1;partitionStates[1].active=true;keypadCount++;}
+  if (KP_ADDR3 > 15 && (mask & (0x01 << (KP_ADDR3 - 16)))) {partitions[2] = 1;partitionStates[2].active=true;keypadCount++;}
 }
 
 void setKpAddr(uint8_t partition) {
@@ -2156,10 +2157,12 @@ String getZoneStatus() {
 }
 
 String getSystemStatus() {
+  String s="";
+ for (int p=1;p<4;p++ ) {
+  if (!partitionStates[p-1].active) continue;     
+  s = s + "<b>Partition " + (String) p + " system status:</b> \n";
 
-  String s = "<b>System status:</b> \n";
-
-  switch (currentSystemState) {
+  switch (partitionStates[p-1].previousSystemState) {
   case striggered:
     s = s + "Panel alarm triggered\n";
     break;
@@ -2185,34 +2188,39 @@ String getSystemStatus() {
     s = s + "Panel not ready\n";
     break;
   }
+  s=s+"\n";
+ }
   return s;
 }
 String getSystemLights() {
-  String s = "<b>System lights: </b>\n";
-  if (currentLightState.ready)
+  String s="";
+ for (int p=1;p<4;p++ ) {
+     if (!partitionStates[p-1].active) continue;
+  s = s + "<b>Partition "+ (String) p +" System lights: </b>\n";
+  if (partitionStates[p-1].previousLightState.ready)
     s = s + "Ready|";
-  else if (currentLightState.armed)
+  else if (partitionStates[p-1].previousLightState.armed)
     s = s + "Armed|";
   else
     s = s + "NotReady|";
-  if (currentLightState.trouble)
+  if (partitionStates[p-1].previousLightState.trouble)
     s = s + "Trouble|";
-  if (currentLightState.fire)
+  if (partitionStates[p-1].previousLightState.fire)
     s = s + "Fire|";
-  if (currentLightState.bypass)
+  if (partitionStates[p-1].previousLightState.bypass)
     s = s + "Bypass|";
-  if (currentLightState.ac)
+  if (partitionStates[p-1].previousLightState.ac)
     s = s + "ACOK|";
   else
     s = s + "NOAC|";
-  if (currentLightState.bat)
+  if (partitionStates[p-1].previousLightState.bat)
     s = s + "BAT|";
-  if (currentLightState.chime)
+  if (partitionStates[p-1].previousLightState.chime)
     s = s + "CHM|";
   if (vista.statusFlags.programMode)
     s = s + "Program|";
-  s = s + "\n";
-
+  s = s + "\n\n";
+ }
   return s;
 }
 
@@ -2230,7 +2238,7 @@ void cmdHandler(rx_message_t * msg) {
   }
 
   String outmsg;
-  StaticJsonDocument < 500 > doc;
+  StaticJsonDocument < 1000 > doc;
   #ifdef DEFAULT_PUSH_OPTIONS
   deserializeJson(doc, DEFAULT_PUSH_OPTIONS);
   #endif
@@ -2274,12 +2282,16 @@ void cmdHandler(rx_message_t * msg) {
     String s = "\n" + getSystemStatus();
     s += "------------------------------\n";
     s += getSystemLights();
+
     s += "------------------------------\n";
     s += getZoneStatus();
     if (pauseNotifications)
       s += "Notifications are DISABLED\n";
     else
       s += "Notifications are ACTIVE\n";
+  
+    s += "Active partition is " + (String) activePartition + " \n";
+  
     doc["parse_mode"] = "HTML";
     doc["text"] = s;
     doc.remove("reply_markup"); //msg too long for markup        
