@@ -129,9 +129,9 @@
 #define KP_ADDR1 17
 #define KP_ADDR2 0
 #define KP_ADDR3 0
+#define DEFAULTPARTITION 1
 
 #define DEBUG 1
-
 
 const char * wifiSSID = ""; //name of wifi access point to connect to
 const char * wifiPassword = "";
@@ -144,7 +144,6 @@ const char * telegramUserID="1234567890"; // Set the default Telegram chat recip
 const char * telegramMsgPrefix="[Alarm Panel] "; // Set a prefix for all messages
 String telegramAllowedIDs[] = {
 }; //comma separated list  of user/group chat ids  allowed to send cmds to the bot. 
-
 
 
 byte notifyZones[] = {}; //commar separated list of zones that you want push notifications on change
@@ -238,7 +237,7 @@ char p2[18];
 char msg[50];
 uint8_t partitions[3];
 uint8_t keypadCount;
-uint8_t activePartition=1;
+uint8_t activePartition=DEFAULTPARTITION;
 
 unsigned long refreshTime, pingTime, lowBatteryTime;
 int lastLedState, upCount;
@@ -250,7 +249,7 @@ struct zoneDef {
   bool bypass;
   bool alarm;
   bool trouble;
-
+  uint8_t partition;
 };
 
 zoneDef zones[MAX_ZONES + 1];
@@ -451,7 +450,7 @@ void setup() {
 
   forceZoneUpdate = true;
   pinMode(LED_BUILTIN, OUTPUT); // LED pin as output.
-  vista.setKpAddr(KP_ADDR1);
+
   WiFi.mode(WIFI_STA);
   WiFi.begin(wifiSSID, wifiPassword);
 
@@ -539,7 +538,7 @@ void setup() {
   Serial.print(F("IP address: "));
   Serial.println(WiFi.localIP());
 
-  vista.begin(RX_PIN, TX_PIN, KP_ADDR1, MONITOR_PIN);
+  vista.begin(RX_PIN, TX_PIN,KP_ADDR1, MONITOR_PIN);
 
   vista.lrrSupervisor = LRRSUPERVISOR; //if we don't have a monitoring lrr supervisor we emulate one if set to true
   //set addresses of expander emulators
@@ -560,6 +559,7 @@ void setup() {
   pushlib.begin();
 
   char buf[100];
+  setDefaultKpAddr(DEFAULTPARTITION);
   pushNotification("System restarted");
 
 }
@@ -902,7 +902,7 @@ void loop() {
       }
       zones[vista.statusFlags.zone].time = millis();
       zones[vista.statusFlags.zone].bypass = true;
-
+      assignPartitionToZone(vista.statusFlags.zone);
     }
 
     //trouble lights 
@@ -1098,7 +1098,7 @@ void loop() {
 
     //clears restored zones after timeout
     for (int x = 0; x < MAX_ZONES; x++) {
-      if (((!zones[x + 1].bypass && zones[x + 1].open) || (zones[x + 1].bypass && !vista.statusFlags.bypass)) && (millis() - zones[x + 1].time) > TTL) {
+      if (((!zones[x + 1].bypass && zones[x + 1].open) || (zones[x + 1].bypass && !partitionStates[zones[x+1].partition].previousLightState.bypass)) && (millis() - zones[x + 1].time) > TTL) {
         forceZoneUpdate = true;
         //publish zone status
         if (inList(x + 1, notifyZones, sizeof(notifyZones))) {
@@ -1172,6 +1172,28 @@ void alarm_keypress_partition(const char * keys, int partition) {
     vista.write(keys, addr);
 }
 
+void assignPartitionToZone(uint8_t zone) {
+    for (int p=1;p<4;p++) {
+        if (partitions[p-1]) {
+            zones[zone].partition=p;
+            break;
+        }
+            
+    }
+}
+
+void setDefaultKpAddr(uint8_t p) {
+    uint8_t a;
+    switch (p) {
+       case 1: a= KP_ADDR1;break;
+       case 2: a= KP_ADDR2;break;
+       case 3: a= KP_ADDR3;break;
+       default: return;
+    }
+      if (a > 15 && a < 24) 
+        vista.setKpAddr(a);
+}  
+
 void getPartitions(uint8_t mask) {
   memset(partitions, 0, sizeof(partitions));
   keypadCount=0;
@@ -1180,24 +1202,17 @@ void getPartitions(uint8_t mask) {
   if (KP_ADDR3 > 15 && (mask & (0x01 << (KP_ADDR3 - 16)))) {partitions[2] = 1;partitionStates[2].active=true;keypadCount++;}
 }
 
-void setKpAddr(uint8_t partition) {
-    uint8_t a;
-    switch (partition) {
-      case 1: activePartition=1;a= KP_ADDR1;break;
-      case 2: activePartition=2;a= KP_ADDR2;break;
-      case 3: activePartition=3;a= KP_ADDR3;break;
-      default: return;
-    }
-    if (a > 15 and a < 24) {
-     vista.setKpAddr(a);
+void setActivePartition(uint8_t partition) {
+
+     if (partition < 1 || partition > 3) return;
+     setDefaultKpAddr(partition);     
      publishLcd((char *)partitionStates[partition - 1].lastp1.c_str(), (char *)partitionStates[partition - 1].lastp2.c_str()); 
      
       uint8_t lights=getLights(partitionStates[partition - 1].previousLightState);
     
         publishStatus("status_lights", lights);
         publishStatus("power_status", (partitionStates[partition - 1].previousLightState.ac));
-   
-    }
+     activePartition=partition;
      char msg[14];
     sprintf(msg, "Partition: %d",partition);
     publishMsg(msg);
@@ -2037,11 +2052,11 @@ void onWsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventT
                 vista.write(accessCode);
                 vista.write("1");
               } else if (strcmp(v, "p1") == 0) {
-                  setKpAddr(1);
+                  setActivePartition(1);
               } else if (strcmp(v, "p2") == 0) {
-                  setKpAddr(2);             
+                  setActivePartition(2);             
               } else if (strcmp(v, "p3") == 0) {  
-                  setKpAddr(3);
+                  setActivePartition(3);
               }  else vista.write(v);
               Serial.printf("got key %s\n", v);
             }
@@ -2246,7 +2261,7 @@ void cmdHandler(rx_message_t * msg) {
   String sub = msg -> text.substring(0, 2);
 
   if (msg -> text == "/armstay") {
-    if (!partitionStates[0].previousLightState.armed) {      
+    if (!partitionStates[activePartition-1].previousLightState.armed) {      
         doc["text"] = "sending armed stay";
         serializeJson(doc, outmsg);
         pushlib.sendMessageJson(outmsg);
@@ -2255,7 +2270,7 @@ void cmdHandler(rx_message_t * msg) {
     }
 
   } else if (msg -> text == "/armaway") {
-    if (!partitionStates[0].previousLightState.armed) {        
+    if (!partitionStates[activePartition-1].previousLightState.armed) {        
         doc["text"] = "sending armed away";
         serializeJson(doc, outmsg);
         pushlib.sendMessageJson(outmsg);
@@ -2264,7 +2279,7 @@ void cmdHandler(rx_message_t * msg) {
     }
 
   } else if (msg -> text == "/bypass") {
-    if (!partitionStates[0].previousLightState.armed) {        
+    if (!partitionStates[activePartition-1].previousLightState.armed) {        
         doc["text"] = "Sending bypass...";
         serializeJson(doc, outmsg);
         pushlib.sendMessageJson(outmsg);
@@ -2302,7 +2317,7 @@ void cmdHandler(rx_message_t * msg) {
       
     String cmd = msg -> text.substring(2, msg -> text.length());
     printf("cmd = %s\n", cmd.c_str());
-    vista.write(cmd.c_str());
+    alarm_keypress_partition(cmd.c_str(),activePartition);    
 
   }  else if (sub == "/#") {
      int p;
@@ -2310,8 +2325,7 @@ void cmdHandler(rx_message_t * msg) {
     sscanf(pstr.c_str(), "%d", &p);     
     String cmd = msg -> text.substring(3, msg -> text.length());
     printf("cmd = %s,partition=%d,pstr=%s\n", cmd.c_str(),p,pstr.c_str());
-    if (p > 0 && p < 4)
-        alarm_keypress_partition(cmd.c_str(),p);
+    alarm_keypress_partition(cmd.c_str(),p);
 
   }  else if (msg -> text == "/stopbus") {
     vista.stop();
@@ -2321,7 +2335,7 @@ void cmdHandler(rx_message_t * msg) {
 
   } else if (msg -> text == "/startbus") {
     vista.stop();
-    vista.begin(RX_PIN, TX_PIN, KP_ADDR1, MONITOR_PIN);
+    vista.begin(RX_PIN, TX_PIN,KP_ADDR1, MONITOR_PIN);
     doc["text"] = "Vista bus started..";
     serializeJson(doc, outmsg);
     pushlib.sendMessageJson(outmsg);
@@ -2364,7 +2378,7 @@ void cmdHandler(rx_message_t * msg) {
     int p;
     sscanf(pstr.c_str(), "%d", & p);
     if (p > 0 && p < 4) {
-      setKpAddr(p);
+      setActivePartition(p);
       char out[40];
       sprintf(out, "Partition is now set to %d\n", p);
       doc["text"] = String(out);
