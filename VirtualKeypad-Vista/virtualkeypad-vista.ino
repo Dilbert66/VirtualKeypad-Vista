@@ -133,6 +133,8 @@
 
 #define DEBUG 1
 
+
+
 const char * wifiSSID = ""; //name of wifi access point to connect to
 const char * wifiPassword = "";
 const char * accessCode = "1234"; // An access code is required to arm (unless quick arm is enabled)
@@ -1033,12 +1035,12 @@ void loop() {
 
     //publish status on change only - keeps api traffic down
 
-    if ((partitions[activePartition-1] && changedLightStates(currentLightState,partitionStates[activePartition-1].previousLightState)) || forceZoneUpdate) {
+    if (partitions[activePartition-1] && (changedLightStates(currentLightState,partitionStates[activePartition-1].previousLightState) || forceZoneUpdate)) {
        uint8_t lights=getLights(currentLightState);
     
         publishStatus("status_lights", lights);
         publishStatus("power_status", currentLightState.ac);
-      //Serial.printf("AC=%d,bat=%d,trouble=%d,lights=%02X\n",currentLightState.ac,currentLightState.bat,currentLightState.trouble,lights);           
+      //Serial.printf("AC=%d,bat=%d,trouble=%d,lights=%02X,p=%d,bypass=%d\n",currentLightState.ac,currentLightState.bat,currentLightState.trouble,lights,activePartition,currentLightState.bypass);           
   
 
     }
@@ -1063,21 +1065,12 @@ void loop() {
           snprintf(msg, 100, "Panel trouble status is %s for partition %d", currentLightState.trouble ? "on" : "off", partition);
           pushNotification(msg);
         }
-        //if (currentLightState.chime != previousLightState.chime)
-        // mqttPublish(mqttStatusTopic, "CHIME", currentLightState.chime);
-        // if (currentLightState.away != previousLightState.away)
-        // mqttPublish(mqttStatusTopic, "AWAY", currentLightState.away);
+
         if (currentLightState.ac != previousLightState.ac) {
           snprintf(msg, 100, "Panel ac power status is %s for partition %d", currentLightState.ac ? "OK" : "NoAC", partition);
           pushNotification(msg);
 
-        } //mqttPublish(mqttStatusTopic, "AC", currentLightState.ac);
-        //if (currentLightState.stay != previousLightState.stay)
-        // mqttPublish(mqttStatusTopic, "STAY", currentLightState.stay);
-        //if (currentLightState.night != previousLightState.night)
-        // mqttPublish(mqttStatusTopic, "NIGHT", currentLightState.night);
-        // if (currentLightState.instant != previousLightState.instant)
-        //mqttPublish(mqttStatusTopic, "INST", currentLightState.instant);
+        } 
         if (currentLightState.bat != previousLightState.bat) {
           snprintf(msg, 100, "Panel battery status is %s for partition %d", currentLightState.bat ? "NotOK" : "OK", partition);
           pushNotification(msg);
@@ -1085,12 +1078,7 @@ void loop() {
         if (currentLightState.bypass != previousLightState.bypass) {
           snprintf(msg, 100, "Panel bypass is %s for partition %d", currentLightState.bypass ? "active" : "off", partition);
           pushNotification(msg);
-        } // mqttPublish(mqttStatusTopic, "BYPASS", currentLightState.bypass);
-        // if (currentLightState.ready != previousLightState.ready)
-        // mqttPublish(mqttStatusTopic, "READY", currentLightState.ready);
-        // if (currentLightState.armed != previousLightState.armed)
-        // mqttPublish(mqttStatusTopic, "ARMED", currentLightState.armed);
-
+        } 
         partitionStates[partition - 1].previousLightState = currentLightState;
         
       }
@@ -1175,7 +1163,7 @@ void alarm_keypress_partition(const char * keys, int partition) {
 void assignPartitionToZone(uint8_t zone) {
     for (int p=1;p<4;p++) {
         if (partitions[p-1]) {
-            zones[zone].partition=p;
+            zones[zone].partition=p-1;
             break;
         }
             
