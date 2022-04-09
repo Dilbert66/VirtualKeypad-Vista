@@ -2307,7 +2307,7 @@ void cmdHandler(rx_message_t * msg) {
     printf("cmd = %s\n", cmd.c_str());
     alarm_keypress_partition(cmd.c_str(),activePartition);    
 
-  }  else if (sub == "/#") {
+  }  else if (sub == "/&") {
      int p;
     String pstr = msg -> text.substring(2,3);     
     sscanf(pstr.c_str(), "%d", &p);     
