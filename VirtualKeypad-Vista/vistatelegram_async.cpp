@@ -188,7 +188,7 @@ void PushLib::getUpdatesSendTask(void * args) {
       if (ipClient.connected()) {
         UBaseType_t uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);
         if (DEBUG_PUSHLIB > 0) printf("\nTaskupdates free memory: %5d\n", (uint16_t) uxHighWaterMark);
-        if (DEBUG_PUSHLIB > 1) printf("FreeHeap: %6d, MaxBlock: %6d\n\n", heap_caps_get_free_size(0), heap_caps_get_largest_free_block(0));
+        //if (DEBUG_PUSHLIB > 1) printf("FreeHeap: %6d, MaxBlock: %6d\n\n", heap_caps_get_free_size(0), heap_caps_get_largest_free_block(0));
         if (DEBUG_PUSHLIB > 1) Serial.println(F("connected to api"));
 
         String getRequest = "GET /bot" + (String)_this -> telegramBotToken + "/getUpdates?limit=1&allowed_updates=[%22message%22,%22callback_query%22,%22edit_channel_post%22]&timeout=" + String(LONG_POLL_TIMEOUT) + "&offset=" + String(_this -> lastMsgReceived) + " HTTP/1.1";
