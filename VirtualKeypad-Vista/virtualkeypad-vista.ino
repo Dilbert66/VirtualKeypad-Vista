@@ -772,8 +772,8 @@ void loop() {
     currentLightState.alarm = false;
     currentLightState.armed = false;
     currentLightState.ac = false;
-    currentLightState.bat = false;
-    currentLightState.trouble = false;
+    //currentLightState.bat = false;
+   //currentLightState.trouble = false;
     currentLightState.bypass = false;
     currentLightState.chime = false;
 
@@ -912,7 +912,7 @@ void loop() {
       currentLightState.ac = false;
     } else currentLightState.ac = true;
 
-    if (vista.statusFlags.lowBattery && vista.statusFlags.systemFlag) {
+    if (vista.statusFlags.lowBattery ) {
       currentLightState.bat = true;
       lowBatteryTime = millis();
     }
@@ -1955,11 +1955,11 @@ bool changedLightStates(lightStates currentLightState, lightStates previousLight
     return true;
   if (currentLightState.ac != previousLightState.ac)
     return true;
-  if (currentLightState.stay != previousLightState.stay)
+  if (currentLightState.stay != previousLightState.stay  && vista.statusFlags.systemFlag)
     return true;
-  if (currentLightState.night != previousLightState.night)
+  if (currentLightState.night != previousLightState.night  && vista.statusFlags.systemFlag)
     return true;
-  if (currentLightState.instant != previousLightState.instant)
+  if (currentLightState.instant != previousLightState.instant  && vista.statusFlags.systemFlag)
     return true;
   if (currentLightState.bat != previousLightState.bat)
     return true;
